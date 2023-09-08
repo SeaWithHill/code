@@ -52,20 +52,8 @@ import java.util.Map;
  * @version 1.0.0
  */
 public class PheClassLoaderJacoco extends ClassLoader {
-    public static IRuntime runtime = new LoggerRuntime();
-    public static Instrumenter instr = new Instrumenter(runtime);
-    public static RuntimeData data = new RuntimeData();
-    public static PheClassLoaderJacoco pheClassLoaderJacoco = new PheClassLoaderJacoco();
-    public static ExecutionDataStore executionDataStore = new ExecutionDataStore();
-    public static SessionInfoStore sessionInfoStore = new SessionInfoStore();
 
-    static {
-        try {
-            runtime.startup(data);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+    public static PheClassLoaderJacoco pheClassLoaderJacoco = new PheClassLoaderJacoco();
 
     /**
      * A class loader that loads classes from in-memory data.
@@ -86,9 +74,12 @@ public class PheClassLoaderJacoco extends ClassLoader {
     @Override
     protected Class<?> loadClass(final String targetName, final boolean resolve)
             throws ClassNotFoundException {
+        if(targetName.startsWith("java")){
+            return super.loadClass(targetName, resolve);
+        }
         try {
             InputStream original = getTargetClass(targetName);
-            byte[] instrumented = instr.instrument(original, targetName);
+            byte[] instrumented = PheJacocoThread1.instr.instrument(original, targetName);
             original.close();
             pheClassLoaderJacoco.addDefinition(targetName, instrumented);
         } catch (IOException e) {
