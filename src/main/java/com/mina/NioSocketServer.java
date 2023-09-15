@@ -1,10 +1,11 @@
-package com.niosocket;
+package com.mina;
 
+import com.alibaba.fastjson.JSONObject;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.mina.core.service.IoHandler;
 import org.apache.mina.core.service.SimpleIoProcessorPool;
 import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
-import org.apache.mina.filter.FilterEvent;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
 import org.apache.mina.transport.socket.SocketAcceptor;
 import org.apache.mina.transport.socket.SocketSessionConfig;
@@ -13,11 +14,10 @@ import org.apache.mina.transport.socket.nio.NioSession;
 import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class NioSocketServer {
 
@@ -41,6 +41,9 @@ public class NioSocketServer {
      * soLiner time
      */
     private int soLingerTime = 0;
+
+
+    private static ThreadPoolExecutor threadPoolExecutor;
     /**
      * accept handler
      */
@@ -59,6 +62,7 @@ public class NioSocketServer {
             cfg.setSoLinger(soLingerTime);
             cfg.setTcpNoDelay(true);
             cfg.setIdleTime(IdleStatus.BOTH_IDLE, checkInterval);
+            logger.info("接收到报文");
         }
 
         @Override
@@ -83,38 +87,52 @@ public class NioSocketServer {
 
         @Override
         public void messageReceived(IoSession ioSession, Object o) throws Exception {
-
+                    logger.info("method: messageReceived");
+            JSONObject msg = new JSONObject();
+            msg.put("nioserver", "yes");
+            byte[] buffer = msg.toString().getBytes("UTF-8");
+            ioSession.write(buffer);
+            threadPoolExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    logger.info("业务执行开始");
+                    try {
+                        Thread.sleep(5000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    logger.info("业务执行结束");
+                }
+            });
         }
 
         @Override
         public void messageSent(IoSession ioSession, Object o) throws Exception {
 
         }
-
-        @Override
-        public void inputClosed(IoSession ioSession) throws Exception {
-
-        }
-
-        @Override
-        public void event(IoSession ioSession, FilterEvent filterEvent) throws Exception {
-
-        }
     };
 
     public static void main(String[] args) {
         NioSocketServer nioSocketServer = new NioSocketServer();
-
+        nioSocketServer.start();
+        ThreadFactory namedThreadFactory = new ThreadFactoryBuilder()
+                .setNameFormat("bus-server-handler-%03d").build();
+        threadPoolExecutor = new ThreadPoolExecutor(ServerConstants.BUS_CORE_POOL_SIZE, ServerConstants.BUS_MAXIMUM_POOL_SIZE,
+                ServerConstants.BUS_KEEP_ALIVE_TIME, TimeUnit.SECONDS,
+                new SynchronousQueue<Runnable>(), namedThreadFactory);
     }
 
     public void start() {
         int numCpu = Runtime.getRuntime().availableProcessors();
-        this.acceptor = new NioSocketAcceptor(Executors.newCachedThreadPool(),
+        ExecutorService pool = new ThreadPoolExecutor(ServerConstants.NIO_CORE_POOL_SIZE, ServerConstants.NIO_MAXIMUM_POOL_SIZE,
+                ServerConstants.NIO_KEEP_ALIVE_TIME, TimeUnit.SECONDS,
+                new SynchronousQueue<Runnable>());
+        this.acceptor = new NioSocketAcceptor(pool,
                 new SimpleIoProcessorPool<NioSession>(NioProcessor.class,
                         numCpu + 1));
         this.acceptor.setReuseAddress(true);
-//        this.acceptor.getFilterChain().addFirst("protocol",
-//                new ProtocolCodecFilter(new MessageProtocolCodecFactory()));
+        this.acceptor.getFilterChain().addFirst("protocol",
+                new ProtocolCodecFilter(new MessageProtocolCodecFactory()));
         this.acceptor.setHandler(this.acceptHandler);
         this.host = "127.0.0.1";
         this.port = 11156;
